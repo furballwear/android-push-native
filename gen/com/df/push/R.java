@@ -404,7 +404,7 @@ containing a value of this type.
         public static final int buy_with_google=0x7f07000e;
         public static final int classic=0x7f070011;
         public static final int clear=0x7f070015;
-        public static final int display=0x7f070016;
+        public static final int display=0x7f070018;
         public static final int grayscale=0x7f070012;
         public static final int holo_dark=0x7f070005;
         public static final int holo_light=0x7f070006;
@@ -419,7 +419,9 @@ containing a value of this type.
         public static final int satellite=0x7f070002;
         public static final int selectionDetails=0x7f07000b;
         public static final int strict_sandbox=0x7f070009;
+        public static final int subscribe=0x7f070016;
         public static final int terrain=0x7f070003;
+        public static final int unsubscribe=0x7f070017;
         public static final int wrap_content=0x7f07000d;
     }
     public static final class integer {
@@ -431,7 +433,7 @@ containing a value of this type.
     public static final class string {
         public static final int accept=0x7f050002;
         public static final int app_name=0x7f050023;
-        public static final int clear=0x7f050025;
+        public static final int clear=0x7f050027;
         /**   Text for notification shown when the Android Wear apps needs to be updated. Only shown on the wearable. [CHAR LIMIT=NONE] 
          */
         public static final int common_android_wear_notification_needs_update_text=0x7f050009;
@@ -533,11 +535,14 @@ containing a value of this type.
         public static final int common_signin_button_text_long=0x7f050020;
         public static final int create_calendar_message=0x7f050005;
         public static final int create_calendar_title=0x7f050004;
-        public static final int debug=0x7f050026;
+        public static final int debug=0x7f050028;
         public static final int decline=0x7f050003;
         public static final int register=0x7f050024;
+        public static final int select_topic=0x7f050029;
         public static final int store_picture_message=0x7f050001;
         public static final int store_picture_title=0x7f050000;
+        public static final int subscribe=0x7f050025;
+        public static final int unscbscribe=0x7f050026;
         /**  Text on a placeholder buy button when Google Play services is not
          available or up-to-date 
          */

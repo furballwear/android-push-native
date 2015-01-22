@@ -15,22 +15,26 @@
 package com.df.push;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import android.app.Activity;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
+import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.Context;
-import android.content.Intent;
+import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.support.v4.app.NotificationCompat;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
@@ -51,6 +55,8 @@ public class DemoActivity extends Activity {
 
 	public static final String EXTRA_MESSAGE = "message";
 	public static final String PROPERTY_REG_ID = "registration_id";
+	public static final String PROPERTY_SUB = "subscriptions";
+	public static final String PROPERTY_REG_URL = "registration_url";
 	private static final String PROPERTY_APP_VERSION = "appVersion";
 	private static final int PLAY_SERVICES_RESOLUTION_REQUEST = 9000;
 
@@ -59,9 +65,6 @@ public class DemoActivity extends Activity {
 	 * from the API Console, as described in "Getting Started."
 	 */
 	String SENDER_ID = "138837205839";
-
-	// Dreamfactory server url
-	String url = "https://next.cloud.dreamfactory.com/rest/sns/app/662443008147:app/GCM/com.dreamfactory.launchpad/endpoint?app_name=todoangular";
 
 	/**
 	 * Tag used on log messages.
@@ -74,6 +77,13 @@ public class DemoActivity extends Activity {
 	Context context;
 
 	String regid;
+	ProgressDialog progressDialog;
+	//	private CharSequence[] topics = {
+	//			"Rajesh", "Mahesh", "Vijayakumar"
+	//	};
+
+	private ArrayList<String> topics = new ArrayList<String>();
+	private List<String> subscriptions = new ArrayList<String>();
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
@@ -83,12 +93,25 @@ public class DemoActivity extends Activity {
 		mDisplay = (TextView) findViewById(R.id.display);
 
 		context = getApplicationContext();
-
+		progressDialog = new ProgressDialog(DemoActivity.this);
+		progressDialog.setMessage("Please wait...");
 		// Check device for Play Services APK. If check succeeds, proceed with GCM registration.
 		if (checkPlayServices()) {
-			 
+			// display loading bar and fetch topics for future use
+			getTopics();
 		} else {
 			Log.i(TAG, "No valid Google Play Services APK found.");
+		}
+
+		readSubscriptions(); // if subscribed previously
+		final SharedPreferences prefs = getGcmPreferences(context);
+		if(prefs.getString(PROPERTY_REG_URL, null) == null){
+			// device token is not updated on server, disable subscribe and unsubscribe buttons
+			findViewById(R.id.subscribe).setVisibility(View.GONE);
+			findViewById(R.id.unsubscribe).setVisibility(View.GONE);
+		}else{
+			findViewById(R.id.subscribe).setVisibility(View.VISIBLE);
+			findViewById(R.id.unsubscribe).setVisibility(View.VISIBLE);
 		}
 	}
 
@@ -198,7 +221,15 @@ public class DemoActivity extends Activity {
 			protected void onPostExecute(String msg) {
 				mDisplay.append(msg + "\n");
 				Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_LONG).show();
+				progressDialog.dismiss();
 			}
+
+			@Override
+			protected void onPreExecute() {
+				if(progressDialog != null)
+					progressDialog.show();
+			};
+
 		}.execute(null, null, null);
 	}
 
@@ -221,11 +252,52 @@ public class DemoActivity extends Activity {
 			}
 		} else if (view == findViewById(R.id.clear)) {
 			mDisplay.setText("");
+		} else if (view == findViewById(R.id.subscribe)) {
+			displayOptionsToSubscribe();
+		} else if (view == findViewById(R.id.unsubscribe)) {
+			displayOptionsToUnbscribe();
 		}
+	}
+
+
+	private void displayOptionsToSubscribe(){
+		final CharSequence[] cs = topics.toArray(new CharSequence[topics.size()]);
+		AlertDialog.Builder builder = new AlertDialog.Builder(this);
+		builder.setTitle("Select topic to subscribe");
+
+		builder.setItems(cs, new DialogInterface.OnClickListener() {
+			public void onClick(DialogInterface dialog, int item) {
+				// Do something with the selection
+				final SharedPreferences prefs = getGcmPreferences(context);
+				subscribe(cs[item].toString(), prefs.getString(PROPERTY_REG_URL, null));
+			}
+		});
+		AlertDialog alert = builder.create();
+		alert.show();
+	}
+
+	private void displayOptionsToUnbscribe(){
+		if(subscriptions.size() == 0){
+			Toast.makeText(getApplicationContext(), "No Subscriptions...", Toast.LENGTH_LONG).show();
+			return;
+		}
+		final CharSequence[] cs = subscriptions.toArray(new CharSequence[subscriptions.size()]);
+		AlertDialog.Builder builder = new AlertDialog.Builder(this);
+		builder.setTitle("Select item to unsubscribe");
+
+		builder.setItems(cs, new DialogInterface.OnClickListener() {
+			public void onClick(DialogInterface dialog, int item) {
+				// Do something with the selection
+				unsubscribe(cs[item].toString());
+			}
+		});
+		AlertDialog alert = builder.create();
+		alert.show();
 	}
 
 	@Override
 	protected void onDestroy() {
+		saveSubscriptionList();
 		super.onDestroy();
 	}
 
@@ -252,13 +324,16 @@ public class DemoActivity extends Activity {
 		return getSharedPreferences(DemoActivity.class.getSimpleName(),
 				Context.MODE_PRIVATE);
 	}
+
+
 	/**
 	 * Sends the registration ID to your server over HTTP, so it can use GCM/HTTP or CCS to send
 	 * messages to your app. Not needed for this demo since the device sends upstream messages
 	 * to a server that echoes back the message using the 'from' address in the message.
 	 */
 	private void sendRegistrationIdToBackend(final String regId) {
-
+		// Dreamfactory server url
+		final String url = "https://next.cloud.dreamfactory.com/rest/sns/app/662443008147:app/GCM/com.dreamfactory.launchpad/endpoint?app_name=todoangular";
 		new AsyncTask<Void, Void, String>() {
 			@Override
 			protected String doInBackground(Void... params) {
@@ -277,8 +352,137 @@ public class DemoActivity extends Activity {
 							.header("accept", "application/json")
 							.body(obj.toString())
 							.asJson();
-					msg = "Device Registered to server.";//jsonResponse.toString();
-					Log.i(TAG, "Device registration response " + msg);
+					String endPoint = jsonResponse.getBody().getObject().getString("EndpointArn");
+					Log.i(TAG, "Device registration response " + jsonResponse.getBody().getObject().toString());
+					msg = null;
+					final SharedPreferences prefs = getGcmPreferences(context);
+					SharedPreferences.Editor editor = prefs.edit();
+					editor.putString(PROPERTY_REG_URL, endPoint);
+					editor.commit();
+				} catch (Exception e) { 
+					msg = e.getLocalizedMessage();
+				}
+				return msg;
+			}
+
+			@Override
+			protected void onPostExecute(String msg) {
+				if(msg == null){
+					findViewById(R.id.subscribe).setVisibility(View.VISIBLE);
+					findViewById(R.id.unsubscribe).setVisibility(View.VISIBLE);
+				}else{
+					mDisplay.append(msg + "\n");
+				}
+				progressDialog.dismiss();
+			}
+
+			@Override
+			protected void onPreExecute() {
+				if(progressDialog != null)
+					progressDialog.show();
+			};
+		}.execute(null, null, null);
+	}
+
+	private void getTopics() {
+		final String url = "https://next.cloud.dreamfactory.com/rest/sns/topic?app_name=todoangular";
+
+		new AsyncTask<Void, Void, String>() {
+			@Override
+			protected String doInBackground(Void... params) {
+				String msg = "";
+				HttpResponse<JsonNode> jsonResponse;
+				try {
+					jsonResponse = Unirest.get(url)
+							.header("accept", "application/json")
+							.asJson();
+					JSONArray topicsArray = jsonResponse.getBody().getObject().getJSONArray("resource");
+					for(int i=0; i< topicsArray.length(); i++){
+						topics.add(topicsArray.getJSONObject(i).getString("Topic"));
+					}
+					Log.i(TAG, "Get Topic Response " + topics.toString());
+
+				} catch (Exception e) { 
+					msg = e.getLocalizedMessage();
+				}
+				return msg;
+			}
+
+			@Override
+			protected void onPostExecute(String msg) {
+				//				mDisplay.append(msg + "\n")
+				progressDialog.dismiss();
+			}
+
+			@Override
+			protected void onPreExecute() {
+				if(progressDialog != null)
+					progressDialog.show();
+			};
+		}.execute(null, null, null);
+	}
+
+	private void subscribe(final String topic, final String endPoint) {
+		final String url = "https://next.cloud.dreamfactory.com/rest/sns/subscription?app_name=todoangular";
+
+		new AsyncTask<Void, Void, String>() {
+			@Override
+			protected String doInBackground(Void... params) {
+				String msg = "";
+				JSONObject obj = new JSONObject();
+				try {
+					obj.put("Topic", topic);
+					obj.put("Protocol", "application");
+					obj.put("Endpoint", endPoint);
+				} catch (JSONException e1) {
+					e1.printStackTrace();
+				}
+
+				HttpResponse<JsonNode> jsonResponse;
+				try {
+					jsonResponse = Unirest.post(url)
+							.header("accept", "application/json")
+							.body(obj.toString())
+							.asJson();
+					msg = "Subscribe response " + jsonResponse.getBody().toString();
+					subscriptions.add(jsonResponse.getBody().getObject().getString("SubscriptionArn"));
+					Log.i(TAG, msg);
+				} catch (Exception e) { 
+					msg = e.getLocalizedMessage();
+				}
+				return msg;
+			}
+
+			@Override
+			protected void onPostExecute(String msg) {
+				mDisplay.append(msg + "\n");
+				progressDialog.dismiss();
+			}
+
+			@Override
+			protected void onPreExecute() {
+				if(progressDialog != null)
+					progressDialog.show();
+			};
+		}.execute(null, null, null);
+	}
+
+	private void unsubscribe(final String topic) {
+		final String url = "https://next.cloud.dreamfactory.com/rest/sns/subscription/" + topic + "?app_name=todoangular";
+
+		new AsyncTask<Void, Void, String>() {
+			@Override
+			protected String doInBackground(Void... params) {
+				String msg = "";
+
+				HttpResponse<JsonNode> jsonResponse;
+				try {
+					jsonResponse = Unirest.delete(url)
+							.header("accept", "application/json")
+							.asJson();
+					msg = "Unsubscribe response " + jsonResponse.getBody().toString();
+					Log.i(TAG, msg);
+					subscriptions.remove(topic);
 				} catch (UnirestException e) { 
 					msg = e.getLocalizedMessage();
 				}
@@ -288,7 +492,29 @@ public class DemoActivity extends Activity {
 			@Override
 			protected void onPostExecute(String msg) {
 				mDisplay.append(msg + "\n");
+				progressDialog.dismiss();
+				subscriptions.remove(topic);
 			}
+
+			@Override
+			protected void onPreExecute() {
+				if(progressDialog != null)
+					progressDialog.show();
+			};
 		}.execute(null, null, null);
+	}
+
+	private void readSubscriptions(){
+		final SharedPreferences prefs = getGcmPreferences(context);
+		String serialized = prefs.getString(PROPERTY_SUB, null);
+		if(serialized != null)
+			subscriptions = Arrays.asList(TextUtils.split(serialized, ","));
+	}
+
+	private void saveSubscriptionList(){
+		final SharedPreferences prefs = getGcmPreferences(context);
+		SharedPreferences.Editor editor = prefs.edit();
+		editor.putString(PROPERTY_SUB, TextUtils.join(",", subscriptions));
+		editor.commit();
 	}
 }
